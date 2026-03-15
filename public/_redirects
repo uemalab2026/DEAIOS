@@ -1,0 +1,4 @@
+/*  Redirects */
+/*  All routes lead to index.html for SPA client-side routing */
+/api/*  /.netlify/functions/:splat  200
+/*    /index.html   200
