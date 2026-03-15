@@ -1,69 +1,85 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  isLoading: boolean;
-  signOut: () => Promise<void>;
-  requireAuth: boolean;
+// We map Supabase User to our expected app user format
+interface AuthUser {
+  email: string;
+  name: string;
+  role: 'superadmin' | 'admin' | 'member';
+  id: string;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  session: null,
-  isLoading: true,
-  signOut: async () => {},
-  requireAuth: true,
-});
+interface AuthContextType {
+  user: AuthUser | null;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  isAuthenticated: boolean;
+}
 
-export const AuthProvider = ({ children, requireAuth = true }: { children: React.ReactNode, requireAuth?: boolean }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    // If auth is completely bypassed for dev
-    if (!requireAuth) {
-      setUser({ id: 'mock-user', email: 'dev@deaios.com' } as User);
-      setIsLoading(false);
-      return;
-    }
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Error getting session:', error);
+    // Check active session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          email: session.user.email || '',
+          name: session.user.user_metadata?.name || 'Rômulo Brandão', // Fallback or read from metadata
+          role: 'superadmin', // Keeping role static for now
+          id: session.user.id
+        });
       }
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
+      setIsInitialized(true);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes (login, logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
+      if (session?.user) {
+        setUser({
+          email: session.user.email || '',
+          name: session.user.user_metadata?.name || 'Rômulo Brandão',
+          role: 'superadmin',
+          id: session.user.id
+        });
+      } else {
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [requireAuth]);
+  }, []);
 
-  const signOut = async () => {
+  const login = async (email: string, pass: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const logout = async () => {
     await supabase.auth.signOut();
   };
 
-  const value = {
-    user,
-    session,
-    isLoading,
-    signOut,
-    requireAuth
-  };
+  if (!isInitialized) return null;
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {
