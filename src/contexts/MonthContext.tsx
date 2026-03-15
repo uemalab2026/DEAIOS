@@ -1,56 +1,54 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
-interface MonthContextType {
-  year: number;
-  month: number;
-  setMonth: (year: number, month: number) => void;
-  monthLabel: string;
-  isCurrentMonth: boolean;
+// Using a fixed reference date since date-fns doesn't have an easily mockable 'now' without more setup
+const MOCK_DATE = new Date('2025-10-15T12:00:00Z');
+
+// Determine initial selected month from localStorage or default to current month
+const getInitialSelectedMonth = () => {
+  const storedValue = localStorage.getItem('monthlyPreference') || localStorage.getItem('monthPreference');
+  if (storedValue) {
+      return storedValue;
+  }
+  
+  // Use October 2025 as the default for the mock data
+  const defaultDate = MOCK_DATE;
+  const mm = String(defaultDate.getMonth() + 1).padStart(2, '0');
+  const yyyy = defaultDate.getFullYear();
+  return `${yyyy}-${mm}`;
 }
+
+type MonthContextType = {
+  selectedMonth: string;
+  setSelectedMonth: (month: string) => void;
+};
 
 const MonthContext = createContext<MonthContextType | undefined>(undefined);
 
 export const MonthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const currentDate = new Date();
-  const currentYear = currentDate.getFullYear();
-  const currentMonth = currentDate.getMonth() + 1; // 1-12
+  const [selectedMonth, setSelectedMonthState] = useState(getInitialSelectedMonth);
 
-  const [year, setYear] = useState(() => {
-    const saved = localStorage.getItem('deaios_selected_year');
-    return saved ? parseInt(saved, 10) : currentYear;
-  });
-
-  const [month, setMonthState] = useState(() => {
-    const saved = localStorage.getItem('deaios_selected_month');
-    return saved ? parseInt(saved, 10) : currentMonth;
-  });
-
+  // Sync to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('deaios_selected_year', year.toString());
-    localStorage.setItem('deaios_selected_month', month.toString());
-  }, [year, month]);
+    localStorage.setItem('monthlyPreference', selectedMonth);
+    // keeping old key for backward compatibility just in case
+    localStorage.setItem('monthPreference', selectedMonth);
+  }, [selectedMonth]);
 
-  const setMonth = (y: number, m: number) => {
-    setYear(y);
-    setMonthState(m);
-  };
-
-  const isCurrentMonth = year === currentYear && month === currentMonth;
-
-  const date = new Date(year, month - 1, 1);
-  const monthLabel = format(date, 'MMM yyyy', { locale: ptBR }).toUpperCase();
+  const setSelectedMonth = (month: string) => {
+    setSelectedMonthState(month);
+  }
 
   return (
-    <MonthContext.Provider value={{ year, month, setMonth, monthLabel, isCurrentMonth }}>
+    <MonthContext.Provider value={{ selectedMonth, setSelectedMonth }}>
       {children}
     </MonthContext.Provider>
   );
 };
 
-export const useMonthContext = () => {
+export const useMonth = () => {
   const context = useContext(MonthContext);
-  if (!context) throw new Error('useMonthContext must be used within MonthProvider');
+  if (context === undefined) {
+    throw new Error('useMonth must be used within a MonthProvider');
+  }
   return context;
 };
